@@ -4,19 +4,27 @@ import (
 	"context"
 	"github.com/dghubble/go-twitter/twitter"
 	"github.com/dghubble/oauth1"
+	"github.com/duke-git/lancet/convertor"
 	"strconv"
-	"strings"
 	"tw-bot/entity"
 	"tw-bot/pkg"
 )
 
 type Twitter struct {
 	client *twitter.Client
+	bt     *entity.BotTweet
 }
 
 var (
 	botTweets = make([]entity.BotTweet, 0)
 )
+
+func NewTwitter(bt *entity.BotTweet) *Twitter {
+	return &Twitter{
+		bt:     bt,
+		client: Client(),
+	}
+}
 
 func Client() *twitter.Client {
 	localConfig := GetConfig()
@@ -47,14 +55,6 @@ func Fetch() {
 	for _, b := range botTweets {
 		SaveToDB(&b)
 	}
-
-	for _, b := range botTweets {
-		idStr := strconv.FormatInt(b.ID, 10)
-		err := pkg.Publish("twitter", idStr)
-		if err != nil {
-			return
-		}
-	}
 }
 
 func Collation(tweets []twitter.Tweet) []entity.BotTweet {
@@ -62,13 +62,12 @@ func Collation(tweets []twitter.Tweet) []entity.BotTweet {
 		bt := entity.BotTweet{}
 		bt.ID = value.ID
 		bt.Author = value.User.Name
-		url := strings.Split(value.Text, " ")
-		if len(url) > 1 {
-			bt.Url = url[1]
+		if len(value.Entities.Media) > 0 {
+			bt.Url = value.Entities.Media[0].URL
 		} else {
 			bt.Url = ""
 		}
-		bt.Content = url[0]
+		bt.Content = value.Text
 		tempUrls := make([]string, 0)
 		tempTags := make([]string, 0)
 		for _, media := range value.ExtendedEntities.Media {
@@ -77,9 +76,8 @@ func Collation(tweets []twitter.Tweet) []entity.BotTweet {
 		for _, tag := range value.Entities.Hashtags {
 			tempTags = append(tempTags, tag.Text)
 		}
-		bt.MediaUrls = strings.Join(tempUrls, ",")
-		bt.Tags = strings.Join(tempTags, ",")
-
+		bt.MediaUrls = convertor.ToString(tempUrls)
+		bt.Tags = convertor.ToString(tempTags)
 		botTweets = append(botTweets, bt)
 	}
 
@@ -103,7 +101,7 @@ func SaveToDB(bt *entity.BotTweet) {
 	if pkg.IsExists(bt.ID) {
 		return
 	}
-	id, err := pkg.SaveToDB(bt.ID, bt.Content, bt.Author, bt.MediaUrls, bt.Tags, bt.Url)
+	id, err := pkg.SaveToDB(bt.ID, bt.Author, bt.Content, bt.Tags, bt.MediaUrls, bt.Url)
 	if err != nil {
 		return
 	}

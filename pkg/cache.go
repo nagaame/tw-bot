@@ -2,11 +2,12 @@ package pkg
 
 import (
 	"context"
-	"github.com/go-redis/redis"
+	"github.com/go-redis/redis/v8"
 	"strconv"
 )
 
 var cache *redis.Client
+var ctx = context.Background()
 
 func init() {
 	cache = redis.NewClient(&redis.Options{
@@ -15,35 +16,35 @@ func init() {
 }
 
 func Set(key string, value string) error {
-	return cache.Set(key, value, 0).Err()
+	return cache.Set(ctx, key, value, 0).Err()
 }
 
 func Get(key string) (string, error) {
-	return cache.Get(key).Result()
+	return cache.Get(ctx, key).Result()
 }
 
 func Del(key string) error {
-	return cache.Del(key).Err()
+	return cache.Del(ctx, key).Err()
 }
 
 func Flush() error {
-	return cache.FlushDB().Err()
+	return cache.FlushDB(ctx).Err()
 }
 
 func Exists(key string) (int64, error) {
-	return cache.Exists(key).Result()
+	return cache.Exists(ctx, key).Result()
 }
 
 func Publish(channel string, message string) error {
-	return cache.Publish(channel, message).Err()
+	return cache.Publish(ctx, channel, message).Err()
 }
 
 func Subscribe(channel string, handler func(string)) error {
-	sub := cache.Subscribe(channel)
+	sub := cache.Subscribe(ctx, channel)
 	defer sub.Close()
 
 	for {
-		msg, err := sub.ReceiveMessage()
+		msg, err := sub.ReceiveMessage(ctx)
 		if err != nil {
 			return err
 		}

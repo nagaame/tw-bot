@@ -15,22 +15,14 @@ func Send() {
 		log.Fatalln(err)
 	}
 	bot.Debug = true
-	var idCh chan string
 	err = pkg.Subscribe("twitter", func(message string) {
 		if message == "" {
 			return
 		}
-		idCh <- message
+		SendMessage(message, bot)
 	})
 	if err != nil {
 		log.Fatalln(err)
-	}
-	for {
-		select {
-		case message := <-idCh:
-			SendMessage(message, bot)
-			time.Sleep(time.Second * 5)
-		}
 	}
 }
 
