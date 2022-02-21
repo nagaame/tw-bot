@@ -1,4 +1,4 @@
-module tw-likes
+module tw-bot
 
 go 1.17
 
