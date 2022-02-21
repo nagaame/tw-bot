@@ -20,7 +20,7 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
-	defer db.Close()
+	//defer db.Close()
 	_, err = db.Exec("CREATE TABLE IF NOT EXISTS tweets (tid INTEGER PRIMARY KEY, author TEXT, content TEXT, tags TEXT, media_urls TEXT, urls TEXT)")
 	if err != nil {
 		return
@@ -28,6 +28,15 @@ func init() {
 }
 
 func GetDB() *sql.DB {
+
+	if db == nil {
+		str, _ := os.Getwd()
+		db, err = sql.Open("sqlite3", str+"/twitter.sqlite")
+
+		if err != nil {
+			panic(err)
+		}
+	}
 	return db
 }
 
