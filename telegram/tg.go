@@ -3,42 +3,65 @@ package telegram
 import (
 	tgApi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"log"
+	"strconv"
 	"sync"
 	"time"
-	"tw-bot/entity"
-	"tw-bot/pkg"
+	"tw-bot/cache"
+	"tw-bot/database"
 )
 
-func Send() {
-	bot, err := tgApi.NewBotAPI("5084700957:AAEYjwCOopM7N0tmD63TOyVDrm8gLlsUMxY")
+var (
+	bot *tgApi.BotAPI
+)
+
+func init() {
+	var err error
+	bot, err = tgApi.NewBotAPI("5084700957:AAEYjwCOopM7N0tmD63TOyVDrm8gLlsUMxY")
 	if err != nil {
 		log.Fatalln(err)
 	}
 	bot.Debug = true
-	err = pkg.Subscribe("twitter", func(message string) {
-		if message == "" {
-			return
+}
+
+func Send() {
+	// send message
+	cache := cache.NewCache()
+
+	pubSub := cache.Subscribe("twitter")
+
+	go cache.HandlerSubscribe(pubSub)
+
+}
+
+func Publish(ch chan bool) {
+	for {
+		ok := <-ch
+		if ok {
+			cache := cache.NewCache()
+			id, err := cache.SPop("entity")
+			if err != nil {
+				log.Println("redis key is empty: ", err.Error())
+				continue
+			}
+			err = cache.Publish("twitter", id)
+			if err != nil {
+				log.Println(err)
+				continue
+			}
 		}
-		SendMessage(message, bot)
-	})
-	if err != nil {
-		log.Fatalln(err)
 	}
 }
 
 func SendMessage(idStr string, bot *tgApi.BotAPI) {
-	var err error
-	db := pkg.GetDB()
-	row := db.QueryRow("select * from tweets where tid = ?", idStr)
+	db := database.GetDataBase()
+	id, _ := strconv.ParseInt(idStr, 10, 64)
+	item, err := db.QueryOne(id)
 	if err != nil {
+		log.Println(err)
 		return
 	}
-	item := entity.BotTweet{}
-	err = row.Scan(&item.ID, &item.Content, &item.Tags, &item.MediaUrls, &item.Author)
 	wg := sync.WaitGroup{}
-
 	wg.Add(1)
-
 	go func() {
 		defer wg.Done()
 		time.Sleep(time.Second * 10)
@@ -47,7 +70,6 @@ func SendMessage(idStr string, bot *tgApi.BotAPI) {
 			return
 		}
 	}()
-
 	wg.Wait()
 
 }

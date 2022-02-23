@@ -16,7 +16,7 @@ func init() {
 	config.AccessTokenSecret = "ujq00W66PsK6J49wia3qbXUuZrZwvzndtUGbzA0GqqU8E"
 } // init
 
-func Init() *Config {
+func config() *Config {
 	config := Config{
 		ConsumerKey:       "wmoPCSpLArkwc1TcQ1XNokPFA",
 		ConsumerSecret:    "FNkplAcqAOGOLjK0zUUtQCoB17y32G4xJmUg490UbYvroYRlHN",
@@ -27,7 +27,7 @@ func Init() *Config {
 } // Init
 
 func GetConfig() Config {
-	config := Init()
+	config := config()
 	config.SetConfig(*config)
 	return *config
 } // GetConfig

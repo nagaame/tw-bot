@@ -6,27 +6,28 @@ import (
 	"github.com/dghubble/oauth1"
 	"github.com/duke-git/lancet/convertor"
 	"strconv"
+	"tw-bot/cache"
+	"tw-bot/database"
 	"tw-bot/entity"
-	"tw-bot/pkg"
 )
 
 type Twitter struct {
 	client *twitter.Client
-	bt     *entity.BotTweet
+	tweets []entity.Tweets
 }
 
-var (
-	botTweets = make([]entity.BotTweet, 0)
-)
+//var (
+//	tweets = make([]entity.Tweets, 0)
+//)
 
-func NewTwitter(bt *entity.BotTweet) *Twitter {
+func NewTwitter() *Twitter {
 	return &Twitter{
-		bt:     bt,
-		client: Client(),
+		tweets: make([]entity.Tweets, 0),
+		client: NewTwitterClient(),
 	}
 }
 
-func Client() *twitter.Client {
+func NewTwitterClient() *twitter.Client {
 	localConfig := GetConfig()
 	config := oauth1.NewConfig(localConfig.ConsumerKey, localConfig.ConsumerSecret)
 	token := oauth1.NewToken(localConfig.AccessToken, localConfig.AccessTokenSecret)
@@ -35,8 +36,8 @@ func Client() *twitter.Client {
 	return client
 }
 
-func Fetch() {
-	client := Client()
+func (t *Twitter) Fetch(ch chan bool) {
+	client := NewTwitterClient()
 	tweets, resp, err := client.Favorites.List(&twitter.FavoriteListParams{
 		Count: 20,
 	})
@@ -46,20 +47,15 @@ func Fetch() {
 	if resp.StatusCode != 200 {
 		panic(resp.Status)
 	}
-	Collation(tweets)
-
-	for _, b := range botTweets {
-		SaveToCache(&b)
-	}
-
-	for _, b := range botTweets {
-		SaveToDB(&b)
-	}
+	t.Collation(tweets)
 }
 
-func Collation(tweets []twitter.Tweet) []entity.BotTweet {
+func (t *Twitter) Collation(tweets []twitter.Tweet) {
+
+	ts := make([]entity.Tweets, 0)
+
 	for _, value := range tweets {
-		bt := entity.BotTweet{}
+		bt := entity.Tweets{}
 		bt.ID = value.ID
 		bt.Author = value.User.Name
 		if len(value.Entities.Media) > 0 {
@@ -78,54 +74,51 @@ func Collation(tweets []twitter.Tweet) []entity.BotTweet {
 		}
 		bt.MediaUrls = convertor.ToString(tempUrls)
 		bt.Tags = convertor.ToString(tempTags)
-		botTweets = append(botTweets, bt)
+		ts = append(ts, bt)
 	}
 
-	return botTweets
+	t.tweets = ts
 }
 
-func GetBotTweets() []entity.BotTweet {
-	return botTweets
+func (t *Twitter) GetTweets() []entity.Tweets {
+	return t.tweets
 }
 
-func GetBotTweet(id int64) entity.BotTweet {
-	for _, value := range botTweets {
+func (t *Twitter) GetTweet(id int64) entity.Tweets {
+	for _, value := range t.tweets {
 		if value.ID == id {
 			return value
 		}
 	}
-	return entity.BotTweet{}
+	return entity.Tweets{}
 }
 
-func SaveToDB(bt *entity.BotTweet) {
-	if pkg.IsExists(bt.ID) {
-		return
-	}
-	id, err := pkg.SaveToDB(bt.ID, bt.Author, bt.Content, bt.Tags, bt.MediaUrls, bt.Url)
-	if err != nil {
-		return
-	}
-	if id == 0 {
-		return
+func (t *Twitter) SaveToDB() {
+
+	db := database.GetDataBase()
+
+	for _, t := range t.tweets {
+		if db.IsExists(t.ID) {
+			return
+		}
+		id, err := db.SaveToDB(t.ID, t.Author, t.Content, t.Tags, t.MediaUrls, t.Url)
+		if err != nil {
+			return
+		}
+		if id == 0 {
+			return
+		}
 	}
 }
 
-func SaveToCache(bt *entity.BotTweet) {
-	idStr := strconv.FormatInt(bt.ID, 10)
-	ok, err := pkg.Exists(idStr)
-
-	if err != nil {
-		return
-	}
-
-	if ok > 0 {
-		return
-	}
-
-	idStr = strconv.FormatInt(bt.ID, 10)
-	err = pkg.Set(idStr, idStr)
-	if err != nil {
-		return
+func (t *Twitter) SaveToCache() {
+	c := cache.NewCache()
+	for _, t := range t.tweets {
+		idStr := strconv.FormatInt(t.ID, 10)
+		_, err := c.SAdd("entity", idStr)
+		if err != nil {
+			return
+		}
 	}
 
 }
