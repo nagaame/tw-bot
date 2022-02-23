@@ -27,7 +27,7 @@ func GetDataBase() *Database {
 		}
 		d.Sqlite = db
 	}
-	_, err = db.Exec("CREATE TABLE IF NOT EXISTS entity (tid INTEGER PRIMARY KEY, author TEXT, content TEXT, tags TEXT, media_urls TEXT, urls TEXT, is_publish INTEGER)")
+	_, err = db.Exec("CREATE TABLE IF NOT EXISTS tweets (tid INTEGER PRIMARY KEY, author TEXT, content TEXT, tags TEXT, media_urls TEXT, urls TEXT, is_publish INTEGER)")
 	if err != nil {
 		panic(err)
 	}
@@ -35,7 +35,7 @@ func GetDataBase() *Database {
 	return d
 }
 
-func (db *Database) SaveToDB(tid int64, author, content, tags, mediaUrls, urls string) (int64, error) {
+func (db *Database) SaveOne(tid int64, author, content, tags, mediaUrls, urls string) (int64, error) {
 	if db.IsExists(tid) {
 		return 0, nil
 	}
@@ -80,7 +80,7 @@ func (db *Database) Search(tid int64) ([]entity.Tweets, error) {
 // QueryOne query one row from table
 func (db *Database) QueryOne(tid int64) (entity.Tweets, error) {
 	var tweet entity.Tweets
-	row := db.Sqlite.QueryRow("SELECT * FROM tweets WHERE tid = ?", tid)
+	row := db.Sqlite.QueryRow("SELECT * FROM tweets WHERE tid = ? and is_publish = ?", tid, 0)
 	err := row.Scan(&tweet.ID, &tweet.Author, &tweet.Content, &tweet.Tags, &tweet.MediaUrls, &tweet.Url, &tweet.IsPublish)
 
 	if err != nil {

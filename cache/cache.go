@@ -49,6 +49,14 @@ func (c *Cache) SMembers(key string) ([]string, error) {
 	return cache.SMembers(ctx, key).Result()
 }
 
+func (c *Cache) Set(key string, value string) (string, error) {
+	return cache.Set(ctx, key, value, 0).Result()
+}
+
+func (c *Cache) Get(key string) (string, error) {
+	return cache.Get(ctx, key).Result()
+}
+
 func (c *Cache) Del(key string) error {
 	return cache.Del(ctx, key).Err()
 }
@@ -92,7 +100,7 @@ func (c *Cache) LoadFromDB() error {
 			return err
 		}
 		idStr := strconv.FormatInt(id, 10)
-		_, err = c.SAdd("entity", idStr)
+		_, err = c.SAdd("tweets", idStr)
 		if err != nil {
 			return err
 		}
@@ -100,7 +108,7 @@ func (c *Cache) LoadFromDB() error {
 	return nil
 }
 
-func (c *Cache) HandlerSubscribe(pubSub *redis.PubSub) {
+func (c *Cache) HandlerSubscribe(pubSub *redis.PubSub, handler func(string, string)) {
 	ch := pubSub.Channel()
 	for {
 		msg, ok := <-ch
@@ -108,8 +116,8 @@ func (c *Cache) HandlerSubscribe(pubSub *redis.PubSub) {
 			fmt.Println("receive message is wrong")
 			break
 		}
-
 		fmt.Println(msg.Channel, msg.Payload)
+		handler(msg.Channel, msg.Payload)
 	}
 }
 

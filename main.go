@@ -6,12 +6,7 @@ import (
 )
 
 func main() {
-
-	ch := make(chan bool)
-	t := twitter.NewTwitter()
-	t.Fetch(ch)
-
-	telegram.Publish(ch)
-	telegram.Send()
+	twitter.Start()
+	telegram.Start()
 
 }

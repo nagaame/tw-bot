@@ -5,7 +5,9 @@ import (
 	"github.com/dghubble/go-twitter/twitter"
 	"github.com/dghubble/oauth1"
 	"github.com/duke-git/lancet/convertor"
+	"log"
 	"strconv"
+	"time"
 	"tw-bot/cache"
 	"tw-bot/database"
 	"tw-bot/entity"
@@ -16,9 +18,10 @@ type Twitter struct {
 	tweets []entity.Tweets
 }
 
-//var (
-//	tweets = make([]entity.Tweets, 0)
-//)
+var (
+	saveToCache chan bool
+	saveToDB    chan bool
+)
 
 func NewTwitter() *Twitter {
 	return &Twitter{
@@ -36,10 +39,42 @@ func NewTwitterClient() *twitter.Client {
 	return client
 }
 
-func (t *Twitter) Fetch(ch chan bool) {
+func Start() {
+	t := NewTwitter()
+	t.TickerFetch()
+
+	for {
+		select {
+		case <-saveToCache:
+			t.SaveToRedis()
+		case <-saveToDB:
+			t.SaveToDataBase()
+		}
+	}
+}
+
+func (t *Twitter) TickerFetch() {
+	ticker := time.NewTicker(time.Second * 5)
+	redis := cache.NewCache()
+	maxId, err := redis.Get("max_id")
+	if err != nil {
+		log.Println(err)
+	}
+	if maxId == "" {
+		maxId = "0"
+	}
+	id, _ := strconv.ParseInt(maxId, 10, 64)
+
+	for {
+		t.Fetch(id)
+		<-ticker.C
+	}
+}
+func (t *Twitter) Fetch(maxId int64) {
 	client := NewTwitterClient()
 	tweets, resp, err := client.Favorites.List(&twitter.FavoriteListParams{
-		Count: 20,
+		Count:   20,
+		SinceID: maxId,
 	})
 	if err != nil {
 		panic(err)
@@ -47,10 +82,36 @@ func (t *Twitter) Fetch(ch chan bool) {
 	if resp.StatusCode != 200 {
 		panic(resp.Status)
 	}
-	t.Collation(tweets)
+	t.Convert(tweets)
+	maxId = t.MaxId()
+	redis := cache.NewCache()
+	_, err = redis.Set("max_id", strconv.FormatInt(maxId, 10))
+	if err != nil {
+		log.Println(err.Error())
+		return
+	}
 }
 
-func (t *Twitter) Collation(tweets []twitter.Tweet) {
+func (t *Twitter) MaxId() int64 {
+	var id int64
+	for _, tweet := range t.tweets {
+		if tweet.ID > id {
+			id = tweet.ID
+		}
+	}
+	return id
+}
+
+func (t *Twitter) MaxIdPublish(m int64) error {
+	redis := cache.NewCache()
+	err := redis.Publish("max_id", strconv.FormatInt(m, 10))
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *Twitter) Convert(tweets []twitter.Tweet) {
 
 	ts := make([]entity.Tweets, 0)
 
@@ -78,6 +139,8 @@ func (t *Twitter) Collation(tweets []twitter.Tweet) {
 	}
 
 	t.tweets = ts
+	saveToCache <- true
+	saveToDB <- true
 }
 
 func (t *Twitter) GetTweets() []entity.Tweets {
@@ -93,7 +156,7 @@ func (t *Twitter) GetTweet(id int64) entity.Tweets {
 	return entity.Tweets{}
 }
 
-func (t *Twitter) SaveToDB() {
+func (t *Twitter) SaveToDataBase() {
 
 	db := database.GetDataBase()
 
@@ -101,7 +164,7 @@ func (t *Twitter) SaveToDB() {
 		if db.IsExists(t.ID) {
 			return
 		}
-		id, err := db.SaveToDB(t.ID, t.Author, t.Content, t.Tags, t.MediaUrls, t.Url)
+		id, err := db.SaveOne(t.ID, t.Author, t.Content, t.Tags, t.MediaUrls, t.Url)
 		if err != nil {
 			return
 		}
@@ -111,14 +174,13 @@ func (t *Twitter) SaveToDB() {
 	}
 }
 
-func (t *Twitter) SaveToCache() {
+func (t *Twitter) SaveToRedis() {
 	c := cache.NewCache()
 	for _, t := range t.tweets {
 		idStr := strconv.FormatInt(t.ID, 10)
-		_, err := c.SAdd("entity", idStr)
+		_, err := c.SAdd("tweets", idStr)
 		if err != nil {
 			return
 		}
 	}
-
 }

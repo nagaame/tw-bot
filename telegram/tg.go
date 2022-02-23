@@ -4,72 +4,77 @@ import (
 	tgApi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"log"
 	"strconv"
-	"sync"
 	"time"
 	"tw-bot/cache"
 	"tw-bot/database"
 )
 
-var (
+type TGBot struct {
 	bot *tgApi.BotAPI
-)
+}
 
-func init() {
-	var err error
-	bot, err = tgApi.NewBotAPI("5084700957:AAEYjwCOopM7N0tmD63TOyVDrm8gLlsUMxY")
-	if err != nil {
-		log.Fatalln(err)
-	}
+func NewTGBot(token string) *TGBot {
+	bot, err := tgApi.NewBotAPI(token)
 	bot.Debug = true
+	if err != nil {
+		log.Panic(err)
+	}
+	return &TGBot{bot: bot}
 }
 
-func Send() {
+func Start() {
+	t := GetTGBot()
+	t.Publish()
+	t.Send()
+}
+
+func GetTGBot() *TGBot {
+	return NewTGBot("5084700957:AAEYjwCOopM7N0tmD63TOyVDrm8gLlsUMxY")
+}
+func (t *TGBot) Send() {
 	// send message
-	cache := cache.NewCache()
-
-	pubSub := cache.Subscribe("twitter")
-
-	go cache.HandlerSubscribe(pubSub)
-
+	redis := cache.NewCache()
+	pubSub := redis.Subscribe("twitter")
+	go redis.HandlerSubscribe(pubSub, Handler)
 }
 
-func Publish(ch chan bool) {
+func Handler(channel, payload string) {
+	// handle message
+	log.Println("channel: ", channel, "payload: ", payload)
+	// send message
+	t := GetTGBot()
+	t.SendMessage(payload)
+}
+
+func (t *TGBot) Publish() {
+	ticker := time.NewTicker(time.Second * 10)
 	for {
-		ok := <-ch
-		if ok {
-			cache := cache.NewCache()
-			id, err := cache.SPop("entity")
-			if err != nil {
-				log.Println("redis key is empty: ", err.Error())
-				continue
-			}
-			err = cache.Publish("twitter", id)
-			if err != nil {
-				log.Println(err)
-				continue
-			}
+		redis := cache.NewCache()
+		id, err := redis.SPop("tweets")
+		if err != nil {
+			log.Println("redis key is empty: ", err.Error())
+			continue
 		}
+		err = redis.Publish("twitter", id)
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+		<-ticker.C
 	}
 }
 
-func SendMessage(idStr string, bot *tgApi.BotAPI) {
+func (t *TGBot) SendMessage(idStr string) {
 	db := database.GetDataBase()
 	id, _ := strconv.ParseInt(idStr, 10, 64)
-	item, err := db.QueryOne(id)
+	tweet, err := db.QueryOne(id)
 	if err != nil {
 		log.Println(err)
 		return
 	}
-	wg := sync.WaitGroup{}
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		time.Sleep(time.Second * 10)
-		_, err := bot.Send(tgApi.NewMessage(-1001278086217, item.Content))
-		if err != nil {
-			return
-		}
-	}()
-	wg.Wait()
+	_, err = t.bot.Send(tgApi.NewMessage(-1001278086217, tweet.Content))
+	if err != nil {
+		return
+	}
 
 }
