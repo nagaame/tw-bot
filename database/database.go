@@ -11,10 +11,6 @@ type Database struct {
 	Sqlite *sql.DB
 }
 
-func NewDatabase() *Database {
-	return GetDataBase()
-}
-
 func GetDataBase() *Database {
 	d := new(Database)
 	var db *sql.DB
@@ -35,12 +31,12 @@ func GetDataBase() *Database {
 	return d
 }
 
-func (db *Database) SaveOne(tid int64, author, content, tags, mediaUrls, urls string) (int64, error) {
-	if db.IsExists(tid) {
+func (db *Database) SaveOne(t entity.Tweets) (int64, error) {
+	if db.IsExists(t.ID) {
 		return 0, nil
 	}
 
-	result, err := db.Sqlite.Exec("INSERT INTO tweets (tid, author, content, tags, media_urls, urls, is_publish) VALUES (?, ?, ?, ?, ?, ?, ?)", tid, author, content, tags, mediaUrls, urls, 0)
+	result, err := db.Sqlite.Exec("INSERT INTO tweets (tid, author, content, tags, media_urls, urls, is_publish) VALUES (?, ?, ?, ?, ?, ?, ?)", t.ID, t.Author, t.Content, t.Tags, t.MediaUrls, t.Url, 0)
 	if err != nil {
 		return 0, err
 	}

@@ -4,7 +4,6 @@ import (
 	tgApi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"log"
 	"strconv"
-	"time"
 	"tw-bot/cache"
 	"tw-bot/database"
 )
@@ -17,7 +16,7 @@ func NewTGBot(token string) *TGBot {
 	bot, err := tgApi.NewBotAPI(token)
 	bot.Debug = true
 	if err != nil {
-		log.Panic(err)
+		log.Println(err)
 	}
 	return &TGBot{bot: bot}
 }
@@ -47,21 +46,8 @@ func Handler(channel, payload string) {
 }
 
 func (t *TGBot) Publish() {
-	ticker := time.NewTicker(time.Second * 10)
-	for {
-		redis := cache.NewCache()
-		id, err := redis.SPop("tweets")
-		if err != nil {
-			log.Println("redis key is empty: ", err.Error())
-			continue
-		}
-		err = redis.Publish("twitter", id)
-		if err != nil {
-			log.Println(err)
-			continue
-		}
-		<-ticker.C
-	}
+	//ticker := time.NewTicker(time.Second * 10)
+
 }
 
 func (t *TGBot) SendMessage(idStr string) {

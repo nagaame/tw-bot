@@ -2,10 +2,14 @@ package twitter
 
 import (
 	"context"
+	"fmt"
 	"github.com/dghubble/go-twitter/twitter"
 	"github.com/dghubble/oauth1"
 	"github.com/duke-git/lancet/convertor"
+	"github.com/go-redis/redis/v8"
+	"github.com/rs/xid"
 	"log"
+	"net/http"
 	"strconv"
 	"time"
 	"tw-bot/cache"
@@ -13,15 +17,16 @@ import (
 	"tw-bot/entity"
 )
 
+var (
+	RedisCacheTweetsKey   = "tweets"
+	MqSaveToDataBase      = "mq_save_to_database"
+	MqSaveToDataBaseGroup = "mq_save_to_database_group"
+)
+
 type Twitter struct {
 	client *twitter.Client
 	tweets []entity.Tweets
 }
-
-var (
-	saveToCache chan bool
-	saveToDB    chan bool
-)
 
 func NewTwitter() *Twitter {
 	return &Twitter{
@@ -41,81 +46,40 @@ func NewTwitterClient() *twitter.Client {
 
 func Start() {
 	t := NewTwitter()
-	t.TickerFetch()
-
-	for {
-		select {
-		case <-saveToCache:
-			t.SaveToRedis()
-		case <-saveToDB:
-			t.SaveToDataBase()
-		}
-	}
+	go t.AsyncFetch()
+	go t.AsyncPublishDataBaseMessage()
+	go t.SaveToDataBase()
 }
 
-func (t *Twitter) TickerFetch() {
-	ticker := time.NewTicker(time.Second * 5)
-	redis := cache.NewCache()
-	maxId, err := redis.Get("max_id")
-	if err != nil {
-		log.Println(err)
-	}
-	if maxId == "" {
-		maxId = "0"
-	}
-	id, _ := strconv.ParseInt(maxId, 10, 64)
-
+func (t *Twitter) AsyncFetch() {
+	ticker := time.NewTicker(time.Second * 60)
+	// 轮询
 	for {
-		t.Fetch(id)
+		t.Fetch()
 		<-ticker.C
 	}
 }
-func (t *Twitter) Fetch(maxId int64) {
+func (t *Twitter) Fetch() {
 	client := NewTwitterClient()
-	tweets, resp, err := client.Favorites.List(&twitter.FavoriteListParams{
-		Count:   20,
-		SinceID: maxId,
+	list := make([]twitter.Tweet, 0)
+	var err error
+	var resp *http.Response
+	list, resp, err = client.Favorites.List(&twitter.FavoriteListParams{
+		Count: 20,
 	})
 	if err != nil {
-		panic(err)
-	}
-	if resp.StatusCode != 200 {
-		panic(resp.Status)
-	}
-	t.Convert(tweets)
-	maxId = t.MaxId()
-	redis := cache.NewCache()
-	_, err = redis.Set("max_id", strconv.FormatInt(maxId, 10))
-	if err != nil {
-		log.Println(err.Error())
+		log.Println(err)
 		return
 	}
-}
-
-func (t *Twitter) MaxId() int64 {
-	var id int64
-	for _, tweet := range t.tweets {
-		if tweet.ID > id {
-			id = tweet.ID
-		}
+	if resp.StatusCode != 200 {
+		log.Println(err)
+		return
 	}
-	return id
+	t.Convert(&list)
 }
 
-func (t *Twitter) MaxIdPublish(m int64) error {
-	redis := cache.NewCache()
-	err := redis.Publish("max_id", strconv.FormatInt(m, 10))
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (t *Twitter) Convert(tweets []twitter.Tweet) {
-
-	ts := make([]entity.Tweets, 0)
-
-	for _, value := range tweets {
+func (t *Twitter) Convert(twitterTweets *[]twitter.Tweet) {
+	for _, value := range *twitterTweets {
 		bt := entity.Tweets{}
 		bt.ID = value.ID
 		bt.Author = value.User.Name
@@ -135,52 +99,83 @@ func (t *Twitter) Convert(tweets []twitter.Tweet) {
 		}
 		bt.MediaUrls = convertor.ToString(tempUrls)
 		bt.Tags = convertor.ToString(tempTags)
-		ts = append(ts, bt)
+		t.tweets = append(t.tweets, bt)
+	}
+	t.SaveToRedis()
+	// 销毁
+	twitterTweets = nil
+	fmt.Println("成功执行一次轮询fetch")
+}
+
+func (t *Twitter) AsyncPublishDataBaseMessage() {
+	c := cache.NewCache()
+	ticker := time.NewTicker(time.Second * 3)
+	for {
+		idStr, err := c.SPop(RedisCacheTweetsKey)
+		if err == redis.Nil {
+			continue
+		}
+		messageId, err := c.XAdd(MqSaveToDataBase, idStr)
+		if err != nil {
+			continue
+		}
+		fmt.Println(messageId)
+		<-ticker.C
 	}
 
-	t.tweets = ts
-	saveToCache <- true
-	saveToDB <- true
 }
 
 func (t *Twitter) GetTweets() []entity.Tweets {
 	return t.tweets
 }
 
-func (t *Twitter) GetTweet(id int64) entity.Tweets {
-	for _, value := range t.tweets {
+func (t *Twitter) GetTweet(id int64) *entity.Tweets {
+	for index, value := range t.tweets {
 		if value.ID == id {
-			return value
+			return &t.tweets[index]
 		}
 	}
-	return entity.Tweets{}
-}
-
-func (t *Twitter) SaveToDataBase() {
-
-	db := database.GetDataBase()
-
-	for _, t := range t.tweets {
-		if db.IsExists(t.ID) {
-			return
-		}
-		id, err := db.SaveOne(t.ID, t.Author, t.Content, t.Tags, t.MediaUrls, t.Url)
-		if err != nil {
-			return
-		}
-		if id == 0 {
-			return
-		}
-	}
+	return nil
 }
 
 func (t *Twitter) SaveToRedis() {
 	c := cache.NewCache()
-	for _, t := range t.tweets {
-		idStr := strconv.FormatInt(t.ID, 10)
-		_, err := c.SAdd("tweets", idStr)
+	for _, item := range t.tweets {
+		idStr := strconv.FormatInt(item.ID, 10)
+		_, err := c.SAdd(RedisCacheTweetsKey, idStr)
 		if err != nil {
 			return
 		}
 	}
+}
+
+func (t *Twitter) SaveToDataBase() {
+	c := cache.NewCache()
+	ticker := time.NewTicker(time.Second * 3)
+	//group, err := c.XGroupCreate(MqSaveToDataBase, MqSaveToDataBaseGroup)
+	//if group != "OK" || err != nil {
+	//	return
+	//}
+	for {
+
+		uniqueID := xid.New().String()
+		result, err := c.XReadGroup(MqSaveToDataBase, MqSaveToDataBaseGroup, uniqueID, 1)
+		if err != nil {
+			return
+		}
+		for _, item := range result {
+			for _, data := range item.Messages {
+				message := data.Values["tid"]
+				id, _ := strconv.ParseInt(message.(string), 10, 64)
+				tweet := t.GetTweet(id)
+				db := database.GetDataBase()
+				_, err = db.SaveOne(*tweet)
+				if err != nil {
+					return
+				}
+			}
+		}
+		<-ticker.C
+	}
+
 }

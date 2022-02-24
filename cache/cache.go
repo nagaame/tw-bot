@@ -25,6 +25,11 @@ func init() {
 	cache = redis.NewClient(&redis.Options{
 		Addr: "localhost:6379",
 	})
+	ctx := context.Background()
+	err := cache.Ping(ctx).Err()
+	if err != nil {
+		panic(err)
+	}
 }
 
 func (c *Cache) SAdd(key string, value string) (int64, error) {
@@ -84,6 +89,58 @@ func (c *Cache) Subscribe(channel string) *redis.PubSub {
 	}
 
 	return subPub
+}
+
+func (c *Cache) XAdd(key string, value string) (string, error) {
+	return cache.XAdd(ctx, &redis.XAddArgs{
+		Stream: key,
+		Values: map[string]interface{}{
+			"tid": value,
+		},
+	}).Result()
+}
+
+func (c *Cache) XRange(key string, start string, end string) ([]redis.XMessage, error) {
+	return cache.XRange(ctx, key, start, end).Result()
+}
+
+func (c *Cache) XDel(key string, value string) (int64, error) {
+	return cache.XDel(ctx, key, value).Result()
+}
+
+func (c *Cache) XRead(key string) ([]redis.XStream, error) {
+	return cache.XRead(ctx, &redis.XReadArgs{
+		Streams: []string{key},
+		Count:   1,
+		Block:   0,
+	}).Result()
+}
+
+func (c *Cache) XGroupCreate(key string, group string) (string, error) {
+	return cache.XGroupCreate(ctx, key, group, "0").Result()
+}
+
+func (c *Cache) XReadGroup(key string, group string, consumer string, count int64) ([]redis.XStream, error) {
+	return cache.XReadGroup(ctx, &redis.XReadGroupArgs{
+		Group:    group,
+		Consumer: consumer,
+		Streams:  []string{key, ">"},
+		Count:    count,
+		Block:    0,
+		NoAck:    false,
+	}).Result()
+}
+
+func (c *Cache) XReadBlock(key string) ([]redis.XStream, error) {
+	return cache.XRead(ctx, &redis.XReadArgs{
+		Streams: []string{key},
+		Count:   1,
+		Block:   -1,
+	}).Result()
+}
+
+func (c *Cache) XAck(key string, value string) (int64, error) {
+	return cache.XAck(ctx, key, value).Result()
 }
 
 func (c *Cache) LoadFromDB() error {
