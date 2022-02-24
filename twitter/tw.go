@@ -10,17 +10,20 @@ import (
 	"github.com/rs/xid"
 	"log"
 	"net/http"
-	"strconv"
+	"sync"
 	"time"
 	"tw-bot/cache"
 	"tw-bot/database"
 	"tw-bot/entity"
+	"tw-bot/tool"
 )
 
 var (
 	RedisCacheTweetsKey   = "tweets"
 	MqSaveToDataBase      = "mq_save_to_database"
 	MqSaveToDataBaseGroup = "mq_save_to_database_group"
+	TweetToMQ             = "tweet_to_mq"
+	TweetToMQCustomer     = "tweet_to_mq_customer"
 )
 
 type Twitter struct {
@@ -47,8 +50,8 @@ func NewTwitterClient() *twitter.Client {
 func Start() {
 	t := NewTwitter()
 	go t.AsyncFetch()
-	go t.AsyncPublishDataBaseMessage()
-	go t.SaveToDataBase()
+	//go t.AsyncPublishDataBaseMessage()
+	//go t.SaveToDataBase()
 }
 
 func (t *Twitter) AsyncFetch() {
@@ -101,14 +104,41 @@ func (t *Twitter) Convert(twitterTweets *[]twitter.Tweet) {
 		bt.Tags = convertor.ToString(tempTags)
 		t.tweets = append(t.tweets, bt)
 	}
+
 	t.SaveToRedis()
+	for _, value := range t.tweets {
+		PushToMQ(value)
+	}
 	// 销毁
 	twitterTweets = nil
-	fmt.Println("成功执行一次轮询fetch")
+	fmt.Println("twitter fetch once success")
+}
+
+func PushToMQ(t entity.Tweets) {
+	c := cache.NewRedisCache()
+	once := sync.Once{}
+	once.Do(func() {
+		group, _ := c.XGroupCreate(TweetToMQ, TweetToMQCustomer)
+		fmt.Println(group)
+	})
+	idStr := tool.IntToString(t.ID)
+	exist, err := c.SIsMember(RedisCacheTweetsKey, idStr)
+	if err != nil {
+		return
+	}
+	if exist {
+		return
+	}
+
+	id, err := c.XAdd(TweetToMQ, t)
+	if err != nil {
+		return
+	}
+	fmt.Println(id)
 }
 
 func (t *Twitter) AsyncPublishDataBaseMessage() {
-	c := cache.NewCache()
+	c := cache.NewRedisCache()
 	ticker := time.NewTicker(time.Second * 3)
 	for {
 		idStr, err := c.SPop(RedisCacheTweetsKey)
@@ -139,9 +169,9 @@ func (t *Twitter) GetTweet(id int64) *entity.Tweets {
 }
 
 func (t *Twitter) SaveToRedis() {
-	c := cache.NewCache()
+	c := cache.NewRedisCache()
 	for _, item := range t.tweets {
-		idStr := strconv.FormatInt(item.ID, 10)
+		idStr := tool.IntToString(item.ID)
 		_, err := c.SAdd(RedisCacheTweetsKey, idStr)
 		if err != nil {
 			return
@@ -150,7 +180,7 @@ func (t *Twitter) SaveToRedis() {
 }
 
 func (t *Twitter) SaveToDataBase() {
-	c := cache.NewCache()
+	c := cache.NewRedisCache()
 	ticker := time.NewTicker(time.Second * 3)
 	//group, err := c.XGroupCreate(MqSaveToDataBase, MqSaveToDataBaseGroup)
 	//if group != "OK" || err != nil {
@@ -166,7 +196,7 @@ func (t *Twitter) SaveToDataBase() {
 		for _, item := range result {
 			for _, data := range item.Messages {
 				message := data.Values["tid"]
-				id, _ := strconv.ParseInt(message.(string), 10, 64)
+				id := tool.StringToInt(message.(string))
 				tweet := t.GetTweet(id)
 				db := database.GetDataBase()
 				_, err = db.SaveOne(*tweet)

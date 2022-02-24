@@ -3,9 +3,9 @@ package telegram
 import (
 	tgApi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"log"
-	"strconv"
 	"tw-bot/cache"
 	"tw-bot/database"
+	"tw-bot/tool"
 )
 
 type TGBot struct {
@@ -32,7 +32,7 @@ func GetTGBot() *TGBot {
 }
 func (t *TGBot) Send() {
 	// send message
-	redis := cache.NewCache()
+	redis := cache.NewRedisCache()
 	pubSub := redis.Subscribe("twitter")
 	go redis.HandlerSubscribe(pubSub, Handler)
 }
@@ -52,7 +52,7 @@ func (t *TGBot) Publish() {
 
 func (t *TGBot) SendMessage(idStr string) {
 	db := database.GetDataBase()
-	id, _ := strconv.ParseInt(idStr, 10, 64)
+	id := tool.StringToInt(idStr)
 	tweet, err := db.QueryOne(id)
 	if err != nil {
 		log.Println(err)

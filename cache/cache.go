@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	"github.com/go-redis/redis/v8"
-	"strconv"
 	"tw-bot/database"
+	"tw-bot/tool"
 )
 
 var cache *redis.Client
@@ -15,7 +15,7 @@ type Cache struct {
 	client *redis.Client
 }
 
-func NewCache() *Cache {
+func NewRedisCache() *Cache {
 	return &Cache{
 		client: cache,
 	}
@@ -91,11 +91,11 @@ func (c *Cache) Subscribe(channel string) *redis.PubSub {
 	return subPub
 }
 
-func (c *Cache) XAdd(key string, value string) (string, error) {
+func (c *Cache) XAdd(key string, value interface{}) (string, error) {
 	return cache.XAdd(ctx, &redis.XAddArgs{
 		Stream: key,
 		Values: map[string]interface{}{
-			"tid": value,
+			"tweet": value,
 		},
 	}).Result()
 }
@@ -156,7 +156,7 @@ func (c *Cache) LoadFromDB() error {
 		if err != nil {
 			return err
 		}
-		idStr := strconv.FormatInt(id, 10)
+		idStr := tool.IntToString(id)
 		_, err = c.SAdd("tweets", idStr)
 		if err != nil {
 			return err
