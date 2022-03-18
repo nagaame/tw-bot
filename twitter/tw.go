@@ -6,7 +6,6 @@ import (
 	"github.com/dghubble/go-twitter/twitter"
 	"github.com/dghubble/oauth1"
 	"github.com/duke-git/lancet/convertor"
-	"github.com/rs/xid"
 	"log"
 	"net/http"
 	"sync"
@@ -18,11 +17,11 @@ import (
 )
 
 var (
-	MqSaveToDataBase      = "mq_save_to_database"
-	MqSaveToDataBaseGroup = "mq_save_to_database_group"
-	TweetToMQ             = "tweet_to_mq"
-	TweetToMQCustomer     = "tweet_to_mq_customer"
-	PushMQ                []data.Tweets
+	TweetToMQ         = "tweet_to_mq"
+	TweetToMQCustomer = "tweet_to_mq_customer"
+	WaitTweetsMQ      []data.Tweets
+	MainCacheTweets   = "main_cache_tweets"
+	OldCacheTweets    = "old_cache_tweets"
 )
 
 type Twitter struct {
@@ -35,6 +34,15 @@ func NewTwitter() *Twitter {
 		tweets: make([]data.Tweets, 0),
 		client: NewTwitterClient(),
 	}
+}
+
+func init() {
+	c := cache.NewRedisCache()
+	once := sync.Once{}
+	once.Do(func() {
+		group, _ := c.XGroupCreate(TweetToMQ, TweetToMQCustomer)
+		fmt.Println("group created is :", group)
+	})
 }
 
 func NewTwitterClient() *twitter.Client {
@@ -67,7 +75,7 @@ func Fetch() {
 	var err error
 	var resp *http.Response
 	list, resp, err = client.Favorites.List(&twitter.FavoriteListParams{
-		Count: 20,
+		Count: 50,
 	})
 	if err != nil {
 		log.Println(err)
@@ -123,44 +131,35 @@ func PushMessage() {
 
 func (t *Twitter) SaveToRedis() {
 	c := cache.NewRedisCache()
-	members, err := c.SMembers("tweets")
-	if err != nil {
-		fmt.Println(err)
-	}
-	if len(members) <= 0 {
-		for _, value := range t.tweets {
-			idStr := tool.IntToString(value.ID)
-			_, err = c.SAdd("tweets", idStr)
-			if err != nil {
-				fmt.Println(err)
-			}
-		}
-
-	}
-	t.Difference()
-}
-
-func (t *Twitter) Difference() {
-	c := cache.NewRedisCache()
-	newKeys := make([]string, 0)
+	// 先备份旧的键值
+	oldKeys, _ := c.SMembers(MainCacheTweets)
 	for _, value := range t.tweets {
 		idStr := tool.IntToString(value.ID)
-		newKeys = append(newKeys, idStr)
+		// 加入新的键值
+		_, err := c.SAdd(MainCacheTweets, idStr)
+		if err != nil {
+			fmt.Println(err)
+		}
 	}
-	_, err := c.SAdd("temp_tweets", newKeys)
-	if err != nil {
-		fmt.Println(err)
+	t.Difference(oldKeys)
+}
+
+func (t *Twitter) Difference(oldKeys []string) {
+	c := cache.NewRedisCache()
+	if len(oldKeys) != 0 {
+		// 写入到新的key中
+		_, err := c.SAdd(OldCacheTweets, oldKeys)
+		if err != nil {
+			fmt.Println(err)
+		}
 	}
-	// 查询两个集合的差集
-	diff, err := c.SDiff("tweets", "temp_tweets")
+	// 比较差集
+	diff, err := c.SDiff(MainCacheTweets, OldCacheTweets)
 	if err != nil {
 		fmt.Println(err)
 	}
 	if len(diff) == 0 {
-		_ = c.Del("temp_tweets")
-		if len(PushMQ) == 0 {
-			PushMQ = t.tweets
-		}
+		_ = c.Del(OldCacheTweets)
 		return
 	}
 	diffTweets := make([]data.Tweets, 0)
@@ -172,17 +171,15 @@ func (t *Twitter) Difference() {
 	if err != nil {
 		log.Println(err.Error())
 	}
-	PushMQ = diffTweets
+
+	saveToDB(diffTweets)
+	WaitTweetsMQ = diffTweets
 }
 
 func PushToMQ() {
 	c := cache.NewRedisCache()
-	once := sync.Once{}
-	once.Do(func() {
-		group, _ := c.XGroupCreate(TweetToMQ, TweetToMQCustomer)
-		fmt.Println("group created is :", group)
-	})
-	for _, value := range PushMQ {
+
+	for _, value := range WaitTweetsMQ {
 		//发送消息到消息队列
 		id, err := c.XAdd(TweetToMQ, value)
 		if err != nil {
@@ -190,7 +187,7 @@ func PushToMQ() {
 		}
 		fmt.Println(id)
 	}
-	PushMQ = []data.Tweets{}
+	WaitTweetsMQ = []data.Tweets{}
 
 }
 
@@ -207,33 +204,13 @@ func (t *Twitter) GetTweet(id int64) *data.Tweets {
 	return nil
 }
 
-func (t *Twitter) SaveToDataBase() {
-	c := cache.NewRedisCache()
-	ticker := time.NewTicker(time.Second * 3)
-	//group, err := c.XGroupCreate(MqSaveToDataBase, MqSaveToDataBaseGroup)
-	//if group != "OK" || err != nil {
-	//	return
-	//}
-	for {
+func saveToDB(tweets []data.Tweets) {
+	db := database.GetDataBase()
 
-		uniqueID := xid.New().String()
-		result, err := c.XReadGroup(MqSaveToDataBase, MqSaveToDataBaseGroup, uniqueID, 1)
+	for _, tweet := range tweets {
+		_, err := db.SaveOne(tweet)
 		if err != nil {
 			return
 		}
-		for _, item := range result {
-			for _, message := range item.Messages {
-				message := message.Values["tid"]
-				id := tool.StringToInt(message.(string))
-				tweet := t.GetTweet(id)
-				db := database.GetDataBase()
-				_, err = db.SaveOne(*tweet)
-				if err != nil {
-					return
-				}
-			}
-		}
-		<-ticker.C
 	}
-
 }
