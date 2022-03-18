@@ -32,11 +32,21 @@ func init() {
 	}
 }
 
-func (c *Cache) SAdd(key string, value string) (int64, error) {
-	return cache.SAdd(ctx, key, value).Result()
+func (c *Cache) SAdd(key string, value ...interface{}) (int64, error) {
+	return cache.SAdd(ctx, key, value...).Result()
 }
 func (c *Cache) SPop(key string) (string, error) {
 	return cache.SPop(ctx, key).Result()
+}
+
+// SDiff redis set 差集
+func (c *Cache) SDiff(keys ...string) ([]string, error) {
+	return cache.SDiff(ctx, keys...).Result()
+}
+
+// SScan redis set 迭代
+func (c *Cache) SScan(key string, cursor uint64, match string, count int64) ([]string, uint64, error) {
+	return cache.SScan(ctx, key, cursor, match, count).Result()
 }
 
 func (c *Cache) SRem(key string, value string) {

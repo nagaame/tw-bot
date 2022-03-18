@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	_ "github.com/mattn/go-sqlite3"
 	"os"
-	"tw-bot/entity"
+	"tw-bot/data"
 )
 
 type Database struct {
@@ -31,7 +31,7 @@ func GetDataBase() *Database {
 	return d
 }
 
-func (db *Database) SaveOne(t entity.Tweets) (int64, error) {
+func (db *Database) SaveOne(t data.Tweets) (int64, error) {
 	if db.IsExists(t.ID) {
 		return 0, nil
 	}
@@ -55,15 +55,15 @@ func (db *Database) IsExists(tid int64) bool {
 	return count > 0
 }
 
-func (db *Database) Search(tid int64) ([]entity.Tweets, error) {
+func (db *Database) Search(tid int64) ([]data.Tweets, error) {
 	rows, err := db.Sqlite.Query("SELECT * FROM tweets WHERE tid = ?", tid)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var tweets []entity.Tweets
+	var tweets []data.Tweets
 	for rows.Next() {
-		var tweet entity.Tweets
+		var tweet data.Tweets
 		err := rows.Scan(&tweet.ID, &tweet.Author, &tweet.Content)
 		if err != nil {
 			return nil, err
@@ -74,8 +74,8 @@ func (db *Database) Search(tid int64) ([]entity.Tweets, error) {
 }
 
 // QueryOne query one row from table
-func (db *Database) QueryOne(tid int64) (entity.Tweets, error) {
-	var tweet entity.Tweets
+func (db *Database) QueryOne(tid int64) (data.Tweets, error) {
+	var tweet data.Tweets
 	row := db.Sqlite.QueryRow("SELECT * FROM tweets WHERE tid = ? and is_publish = ?", tid, 0)
 	err := row.Scan(&tweet.ID, &tweet.Author, &tweet.Content, &tweet.Tags, &tweet.MediaUrls, &tweet.Url, &tweet.IsPublish)
 

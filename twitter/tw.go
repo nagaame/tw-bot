@@ -6,34 +6,33 @@ import (
 	"github.com/dghubble/go-twitter/twitter"
 	"github.com/dghubble/oauth1"
 	"github.com/duke-git/lancet/convertor"
-	"github.com/go-redis/redis/v8"
 	"github.com/rs/xid"
 	"log"
 	"net/http"
 	"sync"
 	"time"
 	"tw-bot/cache"
+	"tw-bot/data"
 	"tw-bot/database"
-	"tw-bot/entity"
 	"tw-bot/tool"
 )
 
 var (
-	RedisCacheTweetsKey   = "tweets"
 	MqSaveToDataBase      = "mq_save_to_database"
 	MqSaveToDataBaseGroup = "mq_save_to_database_group"
 	TweetToMQ             = "tweet_to_mq"
 	TweetToMQCustomer     = "tweet_to_mq_customer"
+	PushMQ                []data.Tweets
 )
 
 type Twitter struct {
 	client *twitter.Client
-	tweets []entity.Tweets
+	tweets []data.Tweets
 }
 
 func NewTwitter() *Twitter {
 	return &Twitter{
-		tweets: make([]entity.Tweets, 0),
+		tweets: make([]data.Tweets, 0),
 		client: NewTwitterClient(),
 	}
 }
@@ -48,21 +47,21 @@ func NewTwitterClient() *twitter.Client {
 }
 
 func Start() {
-	t := NewTwitter()
-	go t.AsyncFetch()
+	go AsyncFetch()
+	go PushMessage()
 	//go t.AsyncPublishDataBaseMessage()
 	//go t.SaveToDataBase()
 }
 
-func (t *Twitter) AsyncFetch() {
+func AsyncFetch() {
 	ticker := time.NewTicker(time.Second * 60)
-	// 轮询
+	// 轮询 每分钟一次
 	for {
-		t.Fetch()
+		Fetch()
 		<-ticker.C
 	}
 }
-func (t *Twitter) Fetch() {
+func Fetch() {
 	client := NewTwitterClient()
 	list := make([]twitter.Tweet, 0)
 	var err error
@@ -78,105 +77,134 @@ func (t *Twitter) Fetch() {
 		log.Println(err)
 		return
 	}
+	t := NewTwitter()
 	t.Convert(&list)
 }
 
-func (t *Twitter) Convert(twitterTweets *[]twitter.Tweet) {
-	for _, value := range *twitterTweets {
-		bt := entity.Tweets{}
-		bt.ID = value.ID
-		bt.Author = value.User.Name
+func (t *Twitter) Convert(twitterList *[]twitter.Tweet) {
+
+	for _, value := range *twitterList {
+		tw := data.Tweets{}
+		tw.ID = value.ID
+		tw.Author = value.User.Name
 		if len(value.Entities.Media) > 0 {
-			bt.Url = value.Entities.Media[0].URL
+			tw.Url = value.Entities.Media[0].URL
 		} else {
-			bt.Url = ""
+			tw.Url = ""
 		}
-		bt.Content = value.Text
+		tw.Content = value.Text
 		tempUrls := make([]string, 0)
 		tempTags := make([]string, 0)
-		for _, media := range value.ExtendedEntities.Media {
-			tempUrls = append(tempUrls, media.MediaURLHttps)
+		if len(value.ExtendedEntities.Media) > 0 {
+			for _, media := range value.ExtendedEntities.Media {
+				tempUrls = append(tempUrls, media.MediaURL)
+			}
 		}
-		for _, tag := range value.Entities.Hashtags {
-			tempTags = append(tempTags, tag.Text)
+		if len(value.Entities.Hashtags) > 0 {
+			for _, hashtag := range value.Entities.Hashtags {
+				tempTags = append(tempTags, hashtag.Text)
+			}
 		}
-		bt.MediaUrls = convertor.ToString(tempUrls)
-		bt.Tags = convertor.ToString(tempTags)
-		t.tweets = append(t.tweets, bt)
+		tw.MediaUrls = convertor.ToString(tempUrls)
+		tw.Tags = convertor.ToString(tempTags)
+		t.tweets = append(t.tweets, tw)
 	}
-
 	t.SaveToRedis()
-	for _, value := range t.tweets {
-		PushToMQ(value)
-	}
-	// 销毁
-	twitterTweets = nil
-	fmt.Println("twitter fetch once success")
 }
 
-func PushToMQ(t entity.Tweets) {
+func PushMessage() {
+	ticker := time.NewTicker(time.Second * 45)
+	// 轮询 每分钟一次
+	for {
+		PushToMQ()
+		<-ticker.C
+	}
+}
+
+func (t *Twitter) SaveToRedis() {
+	c := cache.NewRedisCache()
+	members, err := c.SMembers("tweets")
+	if err != nil {
+		fmt.Println(err)
+	}
+	if len(members) <= 0 {
+		for _, value := range t.tweets {
+			idStr := tool.IntToString(value.ID)
+			_, err = c.SAdd("tweets", idStr)
+			if err != nil {
+				fmt.Println(err)
+			}
+		}
+
+	}
+	t.Difference()
+}
+
+func (t *Twitter) Difference() {
+	c := cache.NewRedisCache()
+	newKeys := make([]string, 0)
+	for _, value := range t.tweets {
+		idStr := tool.IntToString(value.ID)
+		newKeys = append(newKeys, idStr)
+	}
+	_, err := c.SAdd("temp_tweets", newKeys)
+	if err != nil {
+		fmt.Println(err)
+	}
+	// 查询两个集合的差集
+	diff, err := c.SDiff("tweets", "temp_tweets")
+	if err != nil {
+		fmt.Println(err)
+	}
+	if len(diff) == 0 {
+		_ = c.Del("temp_tweets")
+		if len(PushMQ) == 0 {
+			PushMQ = t.tweets
+		}
+		return
+	}
+	diffTweets := make([]data.Tweets, 0)
+	for _, value := range diff {
+		tweets := t.GetTweet(tool.StringToInt(value))
+		diffTweets = append(diffTweets, *tweets)
+	}
+
+	if err != nil {
+		log.Println(err.Error())
+	}
+	PushMQ = diffTweets
+}
+
+func PushToMQ() {
 	c := cache.NewRedisCache()
 	once := sync.Once{}
 	once.Do(func() {
 		group, _ := c.XGroupCreate(TweetToMQ, TweetToMQCustomer)
-		fmt.Println(group)
+		fmt.Println("group created is :", group)
 	})
-	idStr := tool.IntToString(t.ID)
-	exist, err := c.SIsMember(RedisCacheTweetsKey, idStr)
-	if err != nil {
-		return
-	}
-	if exist {
-		return
-	}
-
-	id, err := c.XAdd(TweetToMQ, t)
-	if err != nil {
-		return
-	}
-	fmt.Println(id)
-}
-
-func (t *Twitter) AsyncPublishDataBaseMessage() {
-	c := cache.NewRedisCache()
-	ticker := time.NewTicker(time.Second * 3)
-	for {
-		idStr, err := c.SPop(RedisCacheTweetsKey)
-		if err == redis.Nil {
-			continue
-		}
-		messageId, err := c.XAdd(MqSaveToDataBase, idStr)
+	for _, value := range PushMQ {
+		//发送消息到消息队列
+		id, err := c.XAdd(TweetToMQ, value)
 		if err != nil {
-			continue
+			return
 		}
-		fmt.Println(messageId)
-		<-ticker.C
+		fmt.Println(id)
 	}
+	PushMQ = []data.Tweets{}
 
 }
 
-func (t *Twitter) GetTweets() []entity.Tweets {
+func (t *Twitter) GetTweets() []data.Tweets {
 	return t.tweets
 }
 
-func (t *Twitter) GetTweet(id int64) *entity.Tweets {
+func (t *Twitter) GetTweet(id int64) *data.Tweets {
 	for index, value := range t.tweets {
 		if value.ID == id {
 			return &t.tweets[index]
 		}
 	}
 	return nil
-}
-
-func (t *Twitter) SaveToRedis() {
-	c := cache.NewRedisCache()
-	for _, item := range t.tweets {
-		idStr := tool.IntToString(item.ID)
-		_, err := c.SAdd(RedisCacheTweetsKey, idStr)
-		if err != nil {
-			return
-		}
-	}
 }
 
 func (t *Twitter) SaveToDataBase() {
@@ -194,8 +222,8 @@ func (t *Twitter) SaveToDataBase() {
 			return
 		}
 		for _, item := range result {
-			for _, data := range item.Messages {
-				message := data.Values["tid"]
+			for _, message := range item.Messages {
+				message := message.Values["tid"]
 				id := tool.StringToInt(message.(string))
 				tweet := t.GetTweet(id)
 				db := database.GetDataBase()

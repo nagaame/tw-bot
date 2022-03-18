@@ -1,4 +1,4 @@
-package entity
+package data
 
 import "github.com/duke-git/lancet/convertor"
 
