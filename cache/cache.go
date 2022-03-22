@@ -123,8 +123,8 @@ func (c *Cache) XRange(key string, start string, end string) ([]redis.XMessage, 
 	return client.XRange(ctx, key, start, end).Result()
 }
 
-func (c *Cache) XDel(key string, value string) (int64, error) {
-	return client.XDel(ctx, key, value).Result()
+func (c *Cache) XDel(stream string, ids ...string) (int64, error) {
+	return client.XDel(ctx, stream, ids...).Result()
 }
 
 func (c *Cache) XRead(key string) ([]redis.XStream, error) {

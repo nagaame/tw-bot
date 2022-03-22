@@ -101,7 +101,7 @@ func DeleteStreamMessage(stream redis.XStream) {
 	c := cache.NewRedisCache()
 	message := stream.Messages[0]
 	id := message.ID
-	_, err := c.XAck(twitter.TweetToMQ, twitter.TweetToMQCustomer, id)
+	_, err := c.XDel(twitter.TweetToMQ, id)
 	if err != nil {
 		log.Println("x ack error: ", err)
 	}
