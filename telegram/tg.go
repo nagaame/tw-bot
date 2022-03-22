@@ -91,6 +91,8 @@ func SendMessage() {
 
 	if err != nil {
 		log.Println("send message: ", err)
+		log.Println("tweet id : ", tweet.ID)
+		log.Println("message id: ", message.ID)
 		DeleteStreamMessage(stream)
 		return
 	}

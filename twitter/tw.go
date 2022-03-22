@@ -53,18 +53,28 @@ func NewTwitterClient() *twitter.Client {
 func Start() {
 	go AsyncFetch()
 	go PushMessage()
-	//go t.AsyncPublishDataBaseMessage()
-	//go t.SaveToDataBase()
+	//go AsyncLikedFetch()
 }
 
 func AsyncFetch() {
-	ticker := time.NewTicker(time.Second * 600)
-	// 轮询 每十分钟一次
-	for {
+	ticker := tool.NewTicker(time.Second * 60)
+	ticker.Start(func() {
 		Fetch()
-		<-ticker.C
-	}
+	})
 }
+
+func AsyncLikedFetch() {
+	t := tool.NewTicker(time.Second * 5)
+	t.Start(func() {
+		FetchLiked()
+	})
+
+}
+
+func FetchLiked() {
+	fmt.Println(time.Now().Format("2006-01-02 15:04:05"), "FetchLiked")
+}
+
 func Fetch() {
 
 	t := NewTwitter()
@@ -130,16 +140,16 @@ func (t *Twitter) Convert(twitterList *[]twitter.Tweet) {
 }
 
 func PushMessage() {
-	ticker := time.NewTicker(time.Second * 45)
 	c := cache.NewRedisCache()
 	group, _ := c.XGroupCreate(TweetToMQ, TweetToMQCustomer)
 	fmt.Println("group created is :", group)
 
 	// 轮询 每45秒一次
-	for {
+	ticker := tool.NewTicker(time.Second * 45)
+	ticker.Start(func() {
 		PushToMQ()
-		<-ticker.C
-	}
+	})
+
 }
 
 func (t *Twitter) SaveToRedis() {

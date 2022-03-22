@@ -7,11 +7,8 @@ import (
 )
 
 func main() {
-
 	config.StartConfig()
 	twitter.Start()
 	telegram.Start()
-
 	select {}
-
 }
