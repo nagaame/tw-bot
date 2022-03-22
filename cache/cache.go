@@ -58,8 +58,8 @@ func (c *Cache) SScan(key string, cursor uint64, match string, count int64) ([]s
 	return client.SScan(ctx, key, cursor, match, count).Result()
 }
 
-func (c *Cache) SRem(key string, value string) {
-	client.SRem(ctx, key, value)
+func (c *Cache) SRem(key string, value string) (int64, error) {
+	return client.SRem(ctx, key, value).Result()
 }
 func (c *Cache) SRandMember(key string) (string, error) {
 	return client.SRandMember(ctx, key).Result()
@@ -158,8 +158,8 @@ func (c *Cache) XReadBlock(key string) ([]redis.XStream, error) {
 	}).Result()
 }
 
-func (c *Cache) XAck(key string, value string) (int64, error) {
-	return client.XAck(ctx, key, value).Result()
+func (c *Cache) XAck(stream string, group string, ids ...string) (int64, error) {
+	return client.XAck(ctx, stream, group, ids...).Result()
 }
 
 func (c *Cache) LoadFromDB() error {

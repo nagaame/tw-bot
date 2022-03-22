@@ -87,22 +87,23 @@ func Fetch() {
 
 func (t *Twitter) Convert(twitterList *[]twitter.Tweet) {
 
-	for _, value := range *twitterList {
-		tw := data.Tweet{}
-		tw.ID = value.ID
-		tw.Author = value.User.Name
-		if len(value.Entities.Media) > 0 {
-			tw.Url = value.Entities.Media[0].URL
+	for _, list := range *twitterList {
+		tweet := data.Tweet{}
+		tweet.ID = list.ID
+		tweet.Author = list.User.Name
+		if len(list.Entities.Media) > 0 {
+			tweet.Url = list.Entities.Media[0].URL
 		} else {
-			tw.Url = ""
+			tweet.Url = ""
 		}
-		tw.Content = value.Text
+		tweet.Content = list.Text
 		mediaUrls := make([]string, 0)
 		tags := make([]string, 0)
-		if value.ExtendedEntities == nil {
-			mediaUrls = append(mediaUrls, "")
+		if list.ExtendedEntities == nil {
+			continue
+			//mediaUrls = append(mediaUrls, "")
 		} else {
-			for _, media := range value.ExtendedEntities.Media {
+			for _, media := range list.ExtendedEntities.Media {
 				mediaUrl, err := url.Parse(media.MediaURL)
 				if err != nil {
 					log.Println("url parse error:", err)
@@ -114,16 +115,16 @@ func (t *Twitter) Convert(twitterList *[]twitter.Tweet) {
 				mediaUrls = append(mediaUrls, mediaUrl.String())
 			}
 		}
-		if value.Entities.Hashtags == nil {
+		if list.Entities.Hashtags == nil {
 			tags = append(tags, "")
 		} else {
-			for _, tag := range value.Entities.Hashtags {
+			for _, tag := range list.Entities.Hashtags {
 				tags = append(tags, tag.Text)
 			}
 		}
-		tw.MediaUrls = convertor.ToString(mediaUrls)
-		tw.Tags = convertor.ToString(tags)
-		t.tweets = append(t.tweets, tw)
+		tweet.MediaUrls = convertor.ToString(mediaUrls)
+		tweet.Tags = convertor.ToString(tags)
+		t.tweets = append(t.tweets, tweet)
 	}
 	t.SaveToRedis()
 }

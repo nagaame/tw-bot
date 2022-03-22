@@ -12,14 +12,13 @@ import (
 	"tw-bot/cache"
 	"tw-bot/config"
 	"tw-bot/data"
+	"tw-bot/database"
 	"tw-bot/tool"
+	"tw-bot/twitter"
 )
 
 var (
-	TweetToMQ         = "tweet_to_mq"
-	TweetToMQCustomer = "tweet_to_mq_customer"
-	tg                *TGBot
-	tweet             *data.Tweet
+	tg *TGBot
 )
 
 type TGBot struct {
@@ -32,7 +31,7 @@ func NewTGBot(token string) *TGBot {
 	}
 	tg = new(TGBot)
 	bot, err := tgApi.NewBotAPI(token)
-	bot.Debug = true
+	bot.Debug = false
 	if err != nil {
 		log.Println(err)
 	}
@@ -55,23 +54,18 @@ func Subscribe() {
 	for {
 		<-ticker.C
 		SendMessage()
-		HandlerSendMessage()
-
 	}
 }
 
 func SendMessage() {
 	c := cache.NewRedisCache()
-	var read []redis.XStream
-	exists, err := c.Exists(TweetToMQ)
+	exists, err := c.Exists(twitter.TweetToMQ)
 	if exists != 1 {
 		return
 	}
 	id := xid.New().String()
-
-	_, _ = c.XGroupCreate(TweetToMQ, TweetToMQCustomer)
-
-	read, err = c.XReadGroup(TweetToMQ, TweetToMQCustomer, id, 1)
+	_, _ = c.XGroupCreate(twitter.TweetToMQ, twitter.TweetToMQCustomer)
+	read, err := c.XReadGroup(twitter.TweetToMQ, twitter.TweetToMQCustomer, id, 1)
 	if err != nil {
 		log.Println("x read group error:", err)
 		return
@@ -84,29 +78,58 @@ func SendMessage() {
 		log.Println("value is not string")
 		return
 	}
-	tweetS := data.Tweet{}
-	err = json.Unmarshal([]byte(value), &tweetS)
+
+	tweet := data.Tweet{}
+	err = json.Unmarshal([]byte(value), &tweet)
 	if err != nil {
 		log.Println("json unmarshal error: ", err)
 		return
 	}
-	tweet = &tweetS
-	return
-}
-
-func HandlerSendMessage() {
+	mediaMsg := MediaMessage(tweet)
 	t := GetTGBot()
-
-	if tweet == nil {
-		log.Println("tweet is nil")
-		return
-	}
-
-	mediaMsg := MediaMessage(*tweet)
-	_, err := t.bot.SendMediaGroup(mediaMsg.(tgApi.MediaGroupConfig))
+	_, err = t.bot.SendMediaGroup(mediaMsg.(tgApi.MediaGroupConfig))
 
 	if err != nil {
 		log.Println("send message: ", err)
+		DeleteStreamMessage(stream)
+		return
+	}
+	return
+}
+
+func DeleteStreamMessage(stream redis.XStream) {
+	c := cache.NewRedisCache()
+	message := stream.Messages[0]
+	id := message.ID
+	_, err := c.XAck(twitter.TweetToMQ, twitter.TweetToMQCustomer, id)
+	if err != nil {
+		log.Println("x ack error: ", err)
+	}
+	value, ok := message.Values["tweet"].(string)
+	if !ok {
+		log.Println("value is not string")
+		return
+	}
+	tweet := data.Tweet{}
+	err = json.Unmarshal([]byte(value), &tweet)
+	if err != nil {
+		log.Println("json unmarshal error: ", err)
+		return
+	}
+	CleanCacheAndDB(tweet)
+}
+
+func CleanCacheAndDB(tweet data.Tweet) {
+	c := cache.NewRedisCache()
+	_, err := c.SRem(twitter.MainCacheTweets, tool.IntToString(tweet.ID))
+	if err != nil {
+		log.Println("s rem error: ", err)
+		return
+	}
+	db := database.GetDataBase()
+	err = db.Delete(tweet.ID)
+	if err != nil {
+		log.Println("delete error: ", err)
 		return
 	}
 }
