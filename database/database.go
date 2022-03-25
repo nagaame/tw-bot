@@ -8,13 +8,21 @@ import (
 	"tw-bot/data"
 )
 
+var (
+	db *sql.DB
+)
+
 type Database struct {
 	Sqlite *sql.DB
 }
 
 func GetDataBase() *Database {
 	d := new(Database)
-	var db *sql.DB
+	if db != nil {
+		d.Sqlite = db
+		return d
+	}
+
 	var err error
 	if d.Sqlite == nil {
 		str, _ := os.Getwd()
@@ -28,7 +36,6 @@ func GetDataBase() *Database {
 	if err != nil {
 		panic(err)
 	}
-
 	return d
 }
 
