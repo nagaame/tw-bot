@@ -114,14 +114,14 @@ func (t *Twitter) Convert(twitterList *[]twitter.Tweet) {
 			//mediaUrls = append(mediaUrls, "")
 		} else {
 			for _, media := range list.ExtendedEntities.Media {
-				mediaUrl, err := url.Parse(media.MediaURL)
+				mediaUrl, err := url.Parse(media.MediaURLHttps)
 				if err != nil {
 					log.Println("url parse error:", err)
 					continue
 				}
 				params := url.Values{}
 				params.Add("name", "large")
-				mediaUrl.Scheme = "https"
+				//mediaUrl.Scheme = "https"
 				mediaUrl.RawQuery = params.Encode()
 				mediaUrls = append(mediaUrls, mediaUrl.String())
 			}
