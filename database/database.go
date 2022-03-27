@@ -101,3 +101,22 @@ func (db *Database) Delete(tid int64) error {
 	}
 	return nil
 }
+
+func (db *Database) QueryAll() ([]data.Tweet, error) {
+
+	rows, err := db.Sqlite.Query("SELECT * FROM tweets")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var tweets []data.Tweet
+	for rows.Next() {
+		var tweet data.Tweet
+		err := rows.Scan(&tweet.ID, &tweet.Author, &tweet.Content, &tweet.Tags, &tweet.MediaUrls, &tweet.Url, &tweet.IsPublish)
+		if err != nil {
+			return nil, err
+		}
+		tweets = append(tweets, tweet)
+	}
+	return tweets, nil
+}

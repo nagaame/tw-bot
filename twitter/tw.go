@@ -14,15 +14,12 @@ import (
 	"tw-bot/config"
 	"tw-bot/data"
 	"tw-bot/database"
+	"tw-bot/keys"
 	"tw-bot/tool"
 )
 
 var (
-	TweetToMQ         = "tweet_to_mq"
-	TweetToMQCustomer = "tweet_to_mq_customer"
-	WaitTweetsMQ      []data.Tweet
-	MainCacheTweets   = "main_cache_tweets"
-	OldCacheTweets    = "old_cache_tweets"
+	WaitTweetsMQ []data.Tweet
 )
 
 type Twitter struct {
@@ -120,7 +117,7 @@ func (t *Twitter) Convert(twitterList *[]twitter.Tweet) {
 					continue
 				}
 				params := url.Values{}
-				params.Add("name", "large")
+				params.Add("name", "middle")
 				//mediaUrl.Scheme = "https"
 				mediaUrl.RawQuery = params.Encode()
 				mediaUrls = append(mediaUrls, mediaUrl.String())
@@ -142,7 +139,7 @@ func (t *Twitter) Convert(twitterList *[]twitter.Tweet) {
 
 func PushMessage() {
 	c := cache.NewRedisCache()
-	group, _ := c.XGroupCreate(TweetToMQ, TweetToMQCustomer)
+	group, _ := c.XGroupCreate(keys.TweetToMQ, keys.TweetToMQCustomer)
 	fmt.Println("group created is :", group)
 
 	// 轮询 每45秒一次
@@ -156,11 +153,11 @@ func PushMessage() {
 func (t *Twitter) SaveToRedis() {
 	c := cache.NewRedisCache()
 	// 先备份旧的键值
-	oldKeys, _ := c.SMembers(MainCacheTweets)
+	oldKeys, _ := c.SMembers(keys.MainCacheTweets)
 	for _, value := range t.tweets {
 		idStr := tool.IntToString(value.ID)
 		// 加入新的键值
-		_, err := c.SAdd(MainCacheTweets, idStr)
+		_, err := c.SAdd(keys.MainCacheTweets, idStr)
 		if err != nil {
 			fmt.Println(err)
 		}
@@ -172,18 +169,18 @@ func (t *Twitter) Difference(oldKeys []string) {
 	c := cache.NewRedisCache()
 	if len(oldKeys) != 0 {
 		// 写入到新的key中
-		_, err := c.SAdd(OldCacheTweets, oldKeys)
+		_, err := c.SAdd(keys.OldCacheTweets, oldKeys)
 		if err != nil {
 			fmt.Println(err)
 		}
 	}
 	// 比较差集
-	diff, err := c.SDiff(MainCacheTweets, OldCacheTweets)
+	diff, err := c.SDiff(keys.MainCacheTweets, keys.OldCacheTweets)
 	if err != nil {
 		fmt.Println(err)
 	}
 	if len(diff) == 0 {
-		_ = c.Del(OldCacheTweets)
+		_ = c.Del(keys.OldCacheTweets)
 		return
 	}
 	diffTweets := make([]data.Tweet, 0)
@@ -205,7 +202,7 @@ func PushToMQ() {
 
 	for _, value := range WaitTweetsMQ {
 		//发送消息到消息队列
-		id, err := c.XAdd(TweetToMQ, value)
+		id, err := c.XAdd(keys.TweetToMQ, value)
 		if err != nil {
 			return
 		}

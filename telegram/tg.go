@@ -13,8 +13,8 @@ import (
 	"tw-bot/config"
 	"tw-bot/data"
 	"tw-bot/database"
+	"tw-bot/keys"
 	"tw-bot/tool"
-	"tw-bot/twitter"
 )
 
 var (
@@ -59,13 +59,13 @@ func Subscribe() {
 
 func SendMessage() {
 	c := cache.NewRedisCache()
-	exists, err := c.Exists(twitter.TweetToMQ)
+	exists, err := c.Exists(keys.TweetToMQ)
 	if exists != 1 {
 		return
 	}
 	id := xid.New().String()
-	_, _ = c.XGroupCreate(twitter.TweetToMQ, twitter.TweetToMQCustomer)
-	read, err := c.XReadGroup(twitter.TweetToMQ, twitter.TweetToMQCustomer, id, 1)
+	_, _ = c.XGroupCreate(keys.TweetToMQ, keys.TweetToMQCustomer)
+	read, err := c.XReadGroup(keys.TweetToMQ, keys.TweetToMQCustomer, id, 1)
 	if err != nil {
 		log.Println("x read group error:", err)
 		return
@@ -103,7 +103,7 @@ func DeleteStreamMessage(stream redis.XStream) {
 	c := cache.NewRedisCache()
 	message := stream.Messages[0]
 	id := message.ID
-	_, err := c.XDel(twitter.TweetToMQ, id)
+	_, err := c.XDel(keys.TweetToMQ, id)
 	if err != nil {
 		log.Println("x ack error: ", err)
 	}
@@ -123,7 +123,7 @@ func DeleteStreamMessage(stream redis.XStream) {
 
 func CleanCacheAndDB(tweet data.Tweet) {
 	c := cache.NewRedisCache()
-	_, err := c.SRem(twitter.MainCacheTweets, tool.IntToString(tweet.ID))
+	_, err := c.SRem(keys.MainCacheTweets, tool.IntToString(tweet.ID))
 	if err != nil {
 		log.Println("s rem error: ", err)
 		return
@@ -180,6 +180,8 @@ func MediaMessage(t data.Tweet) tgApi.Chattable {
 	}
 	channelID := config.GetConfig().Telegram.ChannelID
 	id := tool.StringToInt(channelID)
-	mediaMsg := tgApi.NewMediaGroup(id, medias)
+
+	mediaMsg := tgApi.MediaGroupConfig{}
+	mediaMsg = tgApi.NewMediaGroup(id, medias)
 	return mediaMsg
 }

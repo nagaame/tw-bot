@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"github.com/go-redis/redis/v8"
-	"tw-bot/database"
-	"tw-bot/tool"
 )
 
 var (
@@ -160,28 +158,6 @@ func (c *Cache) XReadBlock(key string) ([]redis.XStream, error) {
 
 func (c *Cache) XAck(stream string, group string, ids ...string) (int64, error) {
 	return client.XAck(ctx, stream, group, ids...).Result()
-}
-
-func (c *Cache) LoadFromDB() error {
-	db := database.GetDataBase()
-	ctx, err := db.Sqlite.QueryContext(context.Background(), "SELECT * FROM tweets")
-	if err != nil {
-		return err
-	}
-	for ctx.Next() {
-		var id int64
-
-		err := ctx.Scan(&id)
-		if err != nil {
-			return err
-		}
-		idStr := tool.IntToString(id)
-		_, err = c.SAdd("tweets", idStr)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (c *Cache) HandlerSubscribe(pubSub *redis.PubSub, handler func(string, string)) {
