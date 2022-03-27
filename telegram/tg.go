@@ -85,9 +85,10 @@ func SendMessage() {
 		log.Println("json unmarshal error: ", err)
 		return
 	}
-	mediaMsg := MediaMessage(tweet)
+	var mediaMsg tgApi.MediaGroupConfig
+	mediaMsg = MediaMessage(tweet)
 	t := GetTGBot()
-	_, err = t.bot.SendMediaGroup(mediaMsg.(tgApi.MediaGroupConfig))
+	_, err = t.bot.SendMediaGroup(mediaMsg)
 
 	if err != nil {
 		log.Println("send message: ", err)
@@ -154,7 +155,7 @@ func CaptionFormat(tweet data.Tweet) string {
 	return formatStr
 }
 
-func MediaMessage(t data.Tweet) tgApi.Chattable {
+func MediaMessage(t data.Tweet) tgApi.MediaGroupConfig {
 	var tagsGroup []string
 	var mediasGroup []string
 	err := json.Unmarshal([]byte(t.MediaUrls), &mediasGroup)
