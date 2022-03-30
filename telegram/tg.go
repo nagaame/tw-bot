@@ -31,10 +31,16 @@ func NewTGBot(token string) *TGBot {
 	}
 	tg = new(TGBot)
 	bot, err := tgApi.NewBotAPI(token)
-	bot.Debug = false
 	if err != nil {
 		log.Println(err)
 	}
+
+	if bot == nil {
+		panic("bot is nil")
+	}
+
+	bot.Debug = false
+
 	tg.bot = bot
 	return tg
 }
