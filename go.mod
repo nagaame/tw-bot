@@ -9,7 +9,7 @@ require (
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
 	github.com/mattn/go-sqlite3 v1.14.12
-	github.com/rs/xid v1.3.0
+	github.com/rs/xid v1.4.0
 	gopkg.in/yaml.v2 v2.4.0
 )
 
