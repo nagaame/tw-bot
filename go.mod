@@ -3,7 +3,7 @@ module tw-bot
 go 1.17
 
 require (
-	github.com/dghubble/go-twitter v0.0.0-20220413154426-14d8abde2e80
+	github.com/dghubble/go-twitter v0.0.0-20220428155120-ee736133298b
 	github.com/dghubble/oauth1 v0.7.1
 	github.com/duke-git/lancet v1.2.9
 	github.com/go-redis/redis/v8 v8.11.5
