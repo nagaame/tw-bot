@@ -10,7 +10,6 @@ require (
 	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
 	github.com/mattn/go-sqlite3 v1.14.13
 	github.com/rs/xid v1.4.0
-	github.com/takama/daemon v1.0.0
 	gopkg.in/yaml.v2 v2.4.0
 )
 
@@ -22,5 +21,4 @@ require (
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/google/go-cmp v0.5.5 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
-	golang.org/x/sys v0.0.0-20211216021012-1d35b9e2eb4e // indirect
 )

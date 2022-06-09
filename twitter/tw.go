@@ -117,7 +117,7 @@ func (t *Twitter) Convert(twitterList *[]twitter.Tweet) {
 					continue
 				}
 				params := url.Values{}
-				params.Add("name", "medium")
+				params.Add("name", "large")
 				//mediaUrl.Scheme = "https"
 				mediaUrl.RawQuery = params.Encode()
 				mediaUrls = append(mediaUrls, mediaUrl.String())
