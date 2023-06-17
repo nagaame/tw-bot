@@ -19,6 +19,7 @@ type TwitterConfig struct {
 	CustomerSecret    string `yaml:"customer_secret"`
 	AccessToken       string `yaml:"access_token"`
 	AccessTokenSecret string `yaml:"access_token_secret"`
+	BearerToken       string `yaml:"bearer_token"`
 }
 
 type TelegramConfig struct {
